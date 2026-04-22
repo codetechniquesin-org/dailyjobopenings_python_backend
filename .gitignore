@@ -1,0 +1,28 @@
+# 🔹 Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🔹 Virtual environment
+venv/
+env/
+ENV/
+
+# 🔹 Playwright browsers (IMPORTANT)
+playwright/.cache/
+.ms-playwright/
+
+# 🔹 OS files
+.DS_Store
+Thumbs.db
+
+# 🔹 Logs
+*.log
+
+# 🔹 IDE
+.vscode/
+.idea/
+
+# 🔹 Env variables
+.env
