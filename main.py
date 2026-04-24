@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 import json
 import re
 from playwright.async_api import async_playwright
+import spacy
+
+
+nlp = spacy.load("en_core_web_sm")
 
 app = FastAPI()
 
@@ -280,3 +284,156 @@ async def extract_job(data: URLRequest):
 
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+#this is is realted to the job extraction using text
+@app.post("/extract-from-text")
+def extract_from_text_api(data: dict):
+    text = data.get("text", "")
+
+    if not text:
+        return {"success": False, "message": "No text provided"}
+
+    result = extract_job_from_text_pipeline(text)
+
+    return {
+        "success": True,
+        "source": "text-nlp",
+        "data": result
+    }
+
+
+
+
+def extract_job_from_text_pipeline(text):
+    clean = clean_text(text)
+
+    sections = extract_sections(clean)
+
+    entities = extract_entities_spacy(clean)
+
+    extra = extract_extra_fields(clean)
+
+    skills = extract_skills(clean)
+
+    job_title = detect_job_title(clean)
+
+    return {
+        "jobTitle": job_title,
+        "companyName": entities.get("ORG"),
+        "location": entities.get("GPE"),
+        "description": clean[:2000],
+
+        "responsibilities": sections.get("responsibilities"),
+        "qualifications": sections.get("qualifications"),
+
+        "education": extra.get("education"),
+        "experienceLevel": extra.get("experienceLevel"),
+        "salary": extra.get("salary"),
+        "department": extra.get("department"),
+
+        "skills": skills,
+        "perks": extra.get("perks")
+    }
+
+def clean_text(text):
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+def extract_sections(text):
+    sections = {
+        "responsibilities": "",
+        "qualifications": ""
+    }
+
+    lower = text.lower()
+
+    if "responsibilities" in lower:
+        parts = re.split(r"responsibilities", text, flags=re.I)
+        if len(parts) > 1:
+            sections["responsibilities"] = parts[1][:1000]
+
+    if "requirements" in lower or "qualification" in lower:
+        parts = re.split(r"requirements|qualification", text, flags=re.I)
+        if len(parts) > 1:
+            sections["qualifications"] = parts[1][:1000]
+
+    return sections
+
+def extract_entities_spacy(text):
+    doc = nlp(text)
+
+    data = {
+        "ORG": None,
+        "GPE": None
+    }
+
+    for ent in doc.ents:
+        if ent.label_ == "ORG" and not data["ORG"]:
+            data["ORG"] = ent.text
+
+        if ent.label_ == "GPE" and not data["GPE"]:
+            data["GPE"] = ent.text
+
+    return data
+
+def extract_skills(text):
+    skills_db = [
+        "python", "java", "react", "node", "sql",
+        "aws", "docker", "kubernetes", "javascript",
+        "html", "css", "c++"
+    ]
+
+    found = []
+
+    text_lower = text.lower()
+
+    for skill in skills_db:
+        if skill in text_lower:
+            found.append(skill.capitalize())
+
+    return list(set(found))
+
+def extract_extra_fields(text):
+    text_lower = text.lower()
+
+    education = ""
+    exp = ""
+    salary = ""
+    department = ""
+    perks = []
+
+    edu_match = re.search(r"(b\.?tech|bachelor|master|degree)", text_lower)
+    if edu_match:
+        education = edu_match.group()
+
+    exp_match = re.search(r"\d+\+?\s*(years|yrs)", text_lower)
+    if exp_match:
+        exp = exp_match.group()
+
+    sal_match = re.search(r"(₹?\s?\d+\s?(lpa|lakhs|per annum))", text_lower)
+    if sal_match:
+        salary = sal_match.group()
+
+    if "engineering" in text_lower:
+        department = "Engineering"
+
+    for p in ["remote", "bonus", "insurance", "flexible"]:
+        if p in text_lower:
+            perks.append(p.capitalize())
+
+    return {
+        "education": education,
+        "experienceLevel": exp,
+        "salary": salary,
+        "department": department,
+        "perks": perks
+    }
+
+def detect_job_title(text):
+    lines = text.split(".")[:5]
+
+    for line in lines:
+        if any(word in line.lower() for word in ["engineer", "developer", "analyst", "manager", "intern"]):
+            return line.strip()
+
+    return ""
